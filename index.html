@@ -1,0 +1,793 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#dc2626">
+<title>GOAL ALERT - Real Live Scores</title>
+<style>
+:root{--red:#dc2626;--bg:#0f172a;--panel:#172238}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Roboto,sans-serif;background:var(--bg);color:#fff}
+button{font:inherit;color:inherit;border:0;cursor:pointer;background:transparent}
+header{position:sticky;top:0;z-index:5;background:#101a2bf5;border-bottom:1px solid #ffffff16}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px}
+h1{font-size:21px}
+h2{font-size:21px;margin:18px 0 12px}
+h3{margin-bottom:12px}
+.row{display:flex;align-items:center;gap:9px}
+.between{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tabs{display:flex;gap:7px;padding:0 12px 12px;overflow-x:auto}
+.league-tab{white-space:nowrap;padding:8px 12px;background:#ffffff12;border-radius:20px;font-size:13px}
+.league-tab.active,.btn{background:var(--red)}
+main{padding:14px;max-width:1000px;margin:auto;padding-bottom:100px}
+.grid{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:700px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.card,.panel{background:var(--panel);border:1px solid #ffffff14;border-radius:13px;padding:14px}
+.card{min-height:145px}
+.pinned{border-left:3px solid var(--red)}
+.team-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:12px 0}
+.team-info{display:flex;align-items:center;gap:7px;min-width:0;flex:1}
+.team-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logo{width:25px;height:25px;object-fit:contain;flex-shrink:0}
+.star{font-size:23px;color:#9ca3af;padding:2px}
+.star.on,.yellow{color:#facc15}
+.score{font-size:24px;font-weight:900;color:#4ade80;min-width:25px;text-align:center}
+.small{font-size:12px;color:#9ca3af}
+.red{color:#f87171}.green{color:#4ade80}
+.pill{font-size:12px;padding:5px 9px;background:#ffffff12;border-radius:20px}
+.btn{padding:11px 14px;border-radius:8px;font-weight:bold}
+.secondary{background:#ffffff16}
+.hidden{display:none!important}
+.error{text-align:center;padding:24px}
+.setting{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #ffffff14}
+.setting:last-child{border-bottom:0}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--red)}
+footer{position:fixed;bottom:0;left:0;right:0;z-index:5;display:flex;justify-content:space-around;background:#101a2bf5;border-top:1px solid #ffffff18;padding:10px}
+.nav-btn{padding:6px 25px;color:#9ca3af}
+.nav-btn.active{color:#f87171}
+.banner{background:#9a3412;padding:12px;text-align:center}
+#toast{display:none;position:fixed;bottom:85px;left:12px;right:12px;z-index:20;background:#273449;padding:13px;border-radius:10px;text-align:center}
+.live-dot{animation:pulse 1.5s infinite}
+@keyframes pulse{50%{opacity:.4}}
+.flash{animation:flash .8s}
+@keyframes flash{50%{background:#dc262655}}
+</style>
+</head>
+<body>
+
+<div id="permission-banner" class="banner hidden">
+ Notifications are not enabled.
+ <button class="btn" onclick="requestNotifPermission()">Enable</button>
+ <button onclick="hideBanner()">✕</button>
+</div>
+
+<header>
+ <div class="top">
+  <div class="row">
+   <span style="font-size:24px">🔔</span>
+   <h1>GOAL ALERT</h1>
+   <span id="live-count" class="pill red">0 LIVE</span>
+  </div>
+  <div class="row">
+   <button onclick="refreshScores()" aria-label="Refresh" style="font-size:24px">↻</button>
+   <button onclick="toggleSettings()" aria-label="Settings" style="font-size:24px">⚙</button>
+  </div>
+ </div>
+ <div class="tabs">
+  <button class="league-tab active" data-league="all" onclick="filterLeague('all')">All</button>
+  <button class="league-tab" data-league="eng.1" onclick="filterLeague('eng.1')">EPL</button>
+  <button class="league-tab" data-league="esp.1" onclick="filterLeague('esp.1')">La Liga</button>
+  <button class="league-tab" data-league="ita.1" onclick="filterLeague('ita.1')">Serie A</button>
+  <button class="league-tab" data-league="ger.1" onclick="filterLeague('ger.1')">Bundesliga</button>
+  <button class="league-tab" data-league="fra.1" onclick="filterLeague('fra.1')">Ligue 1</button>
+  <button class="league-tab" data-league="uefa.champions" onclick="filterLeague('uefa.champions')">UCL</button>
+  <button class="league-tab" data-league="rsa.1" onclick="filterLeague('rsa.1')">PSL</button>
+ </div>
+</header>
+
+<main>
+ <div id="loading" class="error">⚽ Fetching real matches...</div>
+ <div id="error-state" class="error hidden">
+  <h2>Can't load matches</h2>
+  <p class="small">Check your internet connection and try again.</p>
+  <br><button class="btn" onclick="fetchMatches()">Retry</button>
+ </div>
+
+ <div id="tab-home">
+  <div id="pinned-matches"></div>
+  <div class="between">
+   <h2>🔴 Live Now</h2>
+   <span id="last-update" class="small"></span>
+  </div>
+  <div id="live-matches" class="grid"></div>
+  <h2>📅 Today in Harare (CAT)</h2>
+  <div id="today-matches" class="grid"></div>
+  <div id="finished-heading" class="hidden"><h2>Recently Finished</h2></div>
+  <div id="finished-matches" class="grid"></div>
+  <div id="no-matches" class="error hidden">No matches found for this filter today.</div>
+ </div>
+
+ <div id="tab-settings" class="hidden">
+  <h2>Settings</h2>
+  <div class="panel">
+   <h3>Notifications</h3>
+   <div class="setting">
+    <div><strong>Goal alerts</strong><p class="small">For starred teams only</p></div>
+    <input id="notif-toggle" type="checkbox" checked onchange="toggleNotifications(this.checked)">
+   </div>
+   <div class="setting">
+    <div><strong>Match start</strong><p class="small">Five minutes before kickoff</p></div>
+    <input id="kickoff-toggle" type="checkbox" checked onchange="toggleKickoffAlerts(this.checked)">
+   </div>
+   <div class="setting">
+    <div><strong>Sound</strong><p class="small">Play a tone when a goal is detected</p></div>
+    <input id="sound-toggle" type="checkbox" checked onchange="toggleSound(this.checked)">
+   </div>
+   <div class="setting">
+    <div><strong>Red card alerts</strong><p class="small">For starred teams' matches</p></div>
+    <input id="red-toggle" type="checkbox" checked onchange="toggleRedAlerts(this.checked)">
+   </div>
+   <div class="row" style="flex-wrap:wrap;margin-top:15px">
+    <button class="btn" onclick="testSound()">🔊 Test sound</button>
+    <button class="btn secondary" onclick="requestNotifPermission()">Enable notifications</button>
+   </div>
+   <p class="small" style="margin-top:12px">Keep this page open for score monitoring. Android may stop background activity.</p>
+  </div>
+
+  <div class="panel" style="margin-top:14px">
+   <h3>Your Starred Teams <span id="team-count" class="small">(0)</span></h3>
+   <div id="fav-teams-list"></div>
+   <p class="small" style="margin-top:12px">Tap ☆ beside a team to follow it.</p>
+  </div>
+ </div>
+</main>
+
+<footer>
+ <button class="nav-btn active" data-tab="home" onclick="switchTab('home')">⚽<br>Matches</button>
+ <button class="nav-btn" data-tab="settings" onclick="switchTab('settings')">⚙<br>Settings</button>
+</footer>
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const LEAGUES = [
+ 'eng.1','esp.1','ita.1','ger.1','fra.1',
+ 'uefa.champions','rsa.1'
+];
+
+const KEY = {
+ teams:'goalalert_teams',
+ scores:'goalalert_scores',
+ cards:'goalalert_events',
+ kickoffs:'goalalert_kickoffs',
+ notif:'goalalert_notif',
+ sound:'goalalert_sound',
+ kickoff:'goalalert_kickoff',
+ red:'goalalert_red',
+ initialized:'goalalert_initialized'
+};
+
+function readJSON(key, fallback) {
+ try {
+  const value = localStorage.getItem(key);
+  return value === null ? fallback : JSON.parse(value);
+ } catch {
+  return fallback;
+ }
+}
+
+let favTeams = readJSON(KEY.teams, []).map(String);
+let lastScores = readJSON(KEY.scores, {});
+let lastCards = readJSON(KEY.cards, {});
+let notifiedKickoffs = readJSON(KEY.kickoffs, []);
+let notifEnabled = localStorage.getItem(KEY.notif) !== 'false';
+let soundEnabled = localStorage.getItem(KEY.sound) !== 'false';
+let kickoffEnabled = localStorage.getItem(KEY.kickoff) !== 'false';
+let redEnabled = localStorage.getItem(KEY.red) !== 'false';
+let initialized = localStorage.getItem(KEY.initialized) === 'true';
+
+let allMatches = [];
+let filteredMatches = [];
+let currentFilter = 'all';
+let updateInterval = null;
+let audioContext = null;
+let toastTimer = null;
+let fetching = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+ document.getElementById('notif-toggle').checked = notifEnabled;
+ document.getElementById('sound-toggle').checked = soundEnabled;
+ document.getElementById('kickoff-toggle').checked = kickoffEnabled;
+ document.getElementById('red-toggle').checked = redEnabled;
+
+ // Convert legacy numeric favourite IDs to strings.
+ save(KEY.teams, favTeams);
+ checkNotifPermission();
+ fetchMatches();
+});
+
+function save(key, value) {
+ try {
+  localStorage.setItem(key, JSON.stringify(value));
+ } catch (error) {
+  console.warn('Could not save data:', error);
+ }
+}
+
+function showToast(message) {
+ const el = document.getElementById('toast');
+ el.textContent = message;
+ el.style.display = 'block';
+ clearTimeout(toastTimer);
+ toastTimer = setTimeout(() => el.style.display = 'none', 3000);
+}
+
+function harareDateString() {
+ const parts = new Intl.DateTimeFormat('en-GB', {
+  timeZone:'Africa/Harare',
+  year:'numeric',month:'2-digit',day:'2-digit'
+ }).formatToParts(new Date());
+
+ const value = type => parts.find(p => p.type === type)?.value || '';
+ return value('year') + value('month') + value('day');
+}
+
+function checkNotifPermission() {
+ const banner = document.getElementById('permission-banner');
+ const unsupported = !('Notification' in window);
+ const denied = !unsupported && Notification.permission !== 'granted';
+ banner.classList.toggle('hidden', !notifEnabled || (!unsupported && !denied));
+ if (unsupported && notifEnabled) {
+  banner.classList.remove('hidden');
+  banner.firstChild.textContent = 'Browser notifications are unsupported. ';
+ }
+}
+
+function hideBanner() {
+ document.getElementById('permission-banner').classList.add('hidden');
+}
+
+async function requestNotifPermission() {
+ if (!('Notification' in window)) {
+  showToast('This browser does not support notifications.');
+  return;
+ }
+ try {
+  const permission = await Notification.requestPermission();
+  checkNotifPermission();
+  if (permission === 'granted') {
+   showToast('Notifications enabled.');
+   notify('GOAL ALERT is ready', {
+    body:'Star a team to receive alerts when it scores.'
+   });
+  } else {
+   showToast('Notification permission was not granted.');
+  }
+ } catch (error) {
+  showToast('Open this page in a supported browser to enable notifications.');
+ }
+}
+
+function notify(title, options) {
+ if (!notifEnabled || !('Notification' in window) ||
+     Notification.permission !== 'granted') return;
+
+ try {
+  const notification = new Notification(title, options);
+  notification.onclick = () => {
+   window.focus();
+   notification.close();
+  };
+ } catch (error) {
+  console.warn('Notification failed:', error);
+ }
+}
+
+// Audio generated by the browser. No empty or external audio file required.
+function getAudioContext() {
+ const AudioCtx = window.AudioContext || window.webkitAudioContext;
+ if (!AudioCtx) return null;
+ if (!audioContext) audioContext = new AudioCtx();
+ return audioContext;
+}
+
+async function playGoalSound() {
+ if (!soundEnabled) return;
+ try {
+  const ctx = getAudioContext();
+  if (!ctx) {
+   showToast('This browser does not support audio.');
+   return;
+  }
+  if (ctx.state === 'suspended') await ctx.resume();
+
+  const start = ctx.currentTime;
+  [880,1175,1568].forEach((frequency,index) => {
+   const oscillator = ctx.createOscillator();
+   const gain = ctx.createGain();
+   const time = start + index * 0.17;
+
+   oscillator.type = 'sine';
+   oscillator.frequency.value = frequency;
+   gain.gain.setValueAtTime(0.001,time);
+   gain.gain.exponentialRampToValueAtTime(0.3,time + 0.025);
+   gain.gain.exponentialRampToValueAtTime(0.001,time + 0.24);
+   oscillator.connect(gain);
+   gain.connect(ctx.destination);
+   oscillator.start(time);
+   oscillator.stop(time + 0.26);
+  });
+ } catch (error) {
+  console.warn('Audio playback blocked:', error);
+  showToast('Sound blocked. Tap Test sound and check media volume.');
+ }
+}
+
+async function testSound() {
+ try {
+  const ctx = getAudioContext();
+  if (!ctx) {
+   showToast('Audio is not supported by this browser.');
+   return;
+  }
+  if (ctx.state === 'suspended') await ctx.resume();
+
+  // Test button plays sound even when the alert toggle is off.
+  const previous = soundEnabled;
+  soundEnabled = true;
+  await playGoalSound();
+  soundEnabled = previous;
+  showToast('Sound test started. Check media volume.');
+ } catch (error) {
+  showToast('Could not play sound. Check browser settings.');
+ }
+}
+
+function toggleNotifications(enabled) {
+ notifEnabled = enabled;
+ localStorage.setItem(KEY.notif, String(enabled));
+ if (enabled) requestNotifPermission();
+ checkNotifPermission();
+}
+
+function toggleSound(enabled) {
+ soundEnabled = enabled;
+ localStorage.setItem(KEY.sound, String(enabled));
+ if (enabled) testSound();
+}
+
+function toggleKickoffAlerts(enabled) {
+ kickoffEnabled = enabled;
+ localStorage.setItem(KEY.kickoff, String(enabled));
+}
+
+function toggleRedAlerts(enabled) {
+ redEnabled = enabled;
+ localStorage.setItem(KEY.red, String(enabled));
+}
+
+async function fetchMatches() {
+ if (fetching) return;
+ fetching = true;
+
+ const loading = document.getElementById('loading');
+ const errorBox = document.getElementById('error-state');
+ loading.classList.remove('hidden');
+ errorBox.classList.add('hidden');
+
+ try {
+  const date = harareDateString();
+
+  const results = await Promise.allSettled(
+   LEAGUES.map(async league => {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard?dates=${date}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${league}: HTTP ${response.status}`);
+    return {league,data:await response.json()};
+   })
+  );
+
+  const events = [];
+  let successfulLeagues = 0;
+
+  results.forEach(result => {
+   if (result.status !== 'fulfilled') return;
+   successfulLeagues++;
+   const {league,data} = result.value;
+   (data.events || []).forEach(event => {
+    event._goalAlertLeagueId = league;
+    events.push(event);
+   });
+  });
+
+  // Keep the old display if every provider request fails.
+  if (successfulLeagues === 0 && allMatches.length === 0) {
+   throw new Error('All league requests failed');
+  }
+
+  if (successfulLeagues > 0) {
+   parseESPNData(events);
+
+   if (!initialized) {
+    // First load establishes a baseline instead of inventing new goals.
+    allMatches.forEach(match => {
+     lastScores[match.id] = {
+      home:match.scoreHome,
+      away:match.scoreAway
+     };
+     lastCards[match.id] = match.redCardCount;
+    });
+    initialized = true;
+    localStorage.setItem(KEY.initialized,'true');
+    save(KEY.scores,lastScores);
+    save(KEY.cards,lastCards);
+   } else {
+    checkForGoals();
+    checkForRedCards();
+   }
+
+   checkKickoffAlerts();
+  }
+
+  loading.classList.add('hidden');
+  applyFilter();
+  renderMatches();
+  updateLiveCount();
+  updateLastUpdate();
+
+  clearInterval(updateInterval);
+  const live = allMatches.some(m => m.status === 'live');
+  updateInterval = setInterval(fetchMatches, live ? 20000 : 60000);
+
+  if (successfulLeagues === 0) showToast('Refresh failed. Showing saved screen data.');
+
+ } catch (error) {
+  console.error('Match loading error:',error);
+  loading.classList.add('hidden');
+  if (allMatches.length === 0) errorBox.classList.remove('hidden');
+  else showToast('Could not refresh scores. Try again later.');
+
+  clearInterval(updateInterval);
+  updateInterval = setInterval(fetchMatches,60000);
+ } finally {
+  fetching = false;
+ }
+}
+
+function parseESPNData(events) {
+ const parsed = [];
+ const seen = new Set();
+
+ events.forEach(event => {
+  const comp = event.competitions?.[0];
+  const competitors = comp?.competitors;
+  if (!comp || !competitors || competitors.length < 2) return;
+
+  const home = competitors.find(c => c.homeAway === 'home');
+  const away = competitors.find(c => c.homeAway === 'away');
+  if (!home?.team || !away?.team) return;
+
+  const id = String(event.id);
+  if (seen.has(id)) return;
+  seen.add(id);
+
+  const state = comp.status?.type?.state || 'pre';
+  const date = new Date(comp.date);
+  if (Number.isNaN(date.getTime())) return;
+
+  if (state === 'post' && Date.now() - date.getTime() > 3*3600000) return;
+
+  const details = comp.details || [];
+  const goals = details.filter(d => d.scoringPlay);
+  const latestGoal = goals[goals.length-1];
+  const cards = details.filter(d => d.redCard);
+
+  parsed.push({
+   id,
+   league:event.league?.name || event._goalAlertLeagueId,
+   leagueShort:event.league?.abbreviation ||
+    event.league?.shortName || event._goalAlertLeagueId,
+   leagueId:event._goalAlertLeagueId,
+   home:home.team.displayName || home.team.name || 'Home',
+   away:away.team.displayName || away.team.name || 'Away',
+   homeId:String(home.team.id || home.team.uid || id+'_home'),
+   awayId:String(away.team.id || away.team.uid || id+'_away'),
+   homeLogo:home.team.logo || '',
+   awayLogo:away.team.logo || '',
+   scoreHome:parseInt(home.score,10) || 0,
+   scoreAway:parseInt(away.score,10) || 0,
+   status:state === 'in' ? 'live' : state === 'post' ? 'finished' : 'upcoming',
+   minute:comp.status?.displayClock || comp.status?.type?.shortDetail || 'LIVE',
+   kickoffDate:comp.date,
+   kickoffTime:date.toLocaleTimeString('en-GB',{
+    timeZone:'Africa/Harare',hour:'2-digit',minute:'2-digit'
+   }),
+   lastScorer:latestGoal?.athletesInvolved?.[0]?.displayName || '',
+   goalMinute:latestGoal?.clock?.displayValue || '',
+   redCardCount:cards.length
+  });
+ });
+
+ parsed.sort((a,b) => {
+  const aFav = favTeams.includes(a.homeId) || favTeams.includes(a.awayId);
+  const bFav = favTeams.includes(b.homeId) || favTeams.includes(b.awayId);
+  if (aFav !== bFav) return aFav ? -1 : 1;
+  const order = {live:0,upcoming:1,finished:2};
+  return order[a.status]-order[b.status];
+ });
+
+ allMatches = parsed;
+}
+
+function checkForGoals() {
+ allMatches.forEach(match => {
+  if (match.status !== 'live') return;
+
+  const old = lastScores[match.id];
+  const current = {home:match.scoreHome,away:match.scoreAway};
+
+  // Newly discovered match: establish its score without false alerts.
+  if (!old) {
+   lastScores[match.id] = current;
+   return;
+  }
+
+  if (current.home > Number(old.home) && favTeams.includes(match.homeId)) {
+   sendGoalNotif(match,match.home);
+   flashMatchCard(match.id);
+  }
+
+  if (current.away > Number(old.away) && favTeams.includes(match.awayId)) {
+   sendGoalNotif(match,match.away);
+   flashMatchCard(match.id);
+  }
+
+  // Always save the latest score to prevent duplicate alerts.
+  lastScores[match.id] = current;
+ });
+
+ save(KEY.scores,lastScores);
+}
+
+function sendGoalNotif(match,team) {
+ const score = `${match.home} ${match.scoreHome} - ${match.scoreAway} ${match.away}`;
+
+ if (notifEnabled) {
+  notify(`⚽ GOAL! ${team}`, {
+   body:`${score}\n${match.minute} · ${match.leagueShort}`,
+   tag:`goal-${match.id}-${match.scoreHome}-${match.scoreAway}`
+  });
+ }
+
+ if (soundEnabled) playGoalSound();
+ showToast(`⚽ GOAL: ${team} | ${match.scoreHome}-${match.scoreAway}`);
+}
+
+function checkForRedCards() {
+ allMatches.forEach(match => {
+  if (match.status !== 'live') return;
+
+  const old = lastCards[match.id];
+  if (old === undefined) {
+   lastCards[match.id] = match.redCardCount;
+   return;
+  }
+
+  if (redEnabled && match.redCardCount > Number(old)) {
+   const homeFav = favTeams.includes(match.homeId);
+   const awayFav = favTeams.includes(match.awayId);
+
+   if (homeFav || awayFav) {
+    const team = homeFav ? match.home : match.away;
+    notify(`🟥 RED CARD: ${team}`, {
+     body:`${match.home} ${match.scoreHome} - ${match.scoreAway} ${match.away}`,
+     tag:`red-${match.id}-${match.redCardCount}`
+    });
+    showToast(`🟥 Red card: ${team}`);
+   }
+  }
+
+  lastCards[match.id] = match.redCardCount;
+ });
+ save(KEY.cards,lastCards);
+}
+
+function checkKickoffAlerts() {
+ if (!kickoffEnabled) return;
+
+ const now = Date.now();
+
+ allMatches.forEach(match => {
+  if (match.status !== 'upcoming') return;
+  if (!favTeams.includes(match.homeId) && !favTeams.includes(match.awayId)) return;
+  if (notifiedKickoffs.includes(match.id)) return;
+
+  const minutes = (new Date(match.kickoffDate).getTime()-now)/60000;
+  if (minutes > 0 && minutes <= 5) {
+   notify('⏰ Kickoff soon!', {
+    body:`${match.home} vs ${match.away}\n${match.kickoffTime} CAT`,
+    tag:'kickoff-'+match.id
+   });
+   notifiedKickoffs.push(match.id);
+   save(KEY.kickoffs,notifiedKickoffs);
+  }
+ });
+}
+
+function filterLeague(league) {
+ currentFilter = league;
+ document.querySelectorAll('.league-tab').forEach(button => {
+  button.classList.toggle('active',button.dataset.league === league);
+ });
+ applyFilter();
+ renderMatches();
+}
+
+function applyFilter() {
+ filteredMatches = currentFilter === 'all'
+  ? allMatches
+  : allMatches.filter(match => match.leagueId === currentFilter);
+}
+
+function escapeHTML(value) {
+ return String(value ?? '').replace(/[&<>"']/g, c => ({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+ })[c]);
+}
+
+function escapeJS(value) {
+ return String(value ?? '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+
+function createMatchCard(match) {
+ const homeFav = favTeams.includes(match.homeId);
+ const awayFav = favTeams.includes(match.awayId);
+ const pinned = homeFav || awayFav;
+
+ const time = match.status === 'live'
+  ? `<span class="red live-dot">● ${escapeHTML(match.minute)}</span>`
+  : match.status === 'finished'
+   ? '<span class="small">FT</span>'
+   : `<span class="small">${escapeHTML(match.kickoffTime)} CAT</span>`;
+
+ function teamRow(name,id,logo,score,fav) {
+  return `<div class="team-row">
+   <div class="team-info">
+    <button class="star ${fav?'on':''}"
+     aria-label="${fav?'Unstar':'Star'} ${escapeHTML(name)}"
+     onclick="toggleFavTeam('${escapeJS(id)}','${escapeJS(name)}')">${fav?'★':'☆'}</button>
+    ${logo?`<img class="logo" src="${escapeHTML(logo)}" alt="" onerror="this.style.display='none'">`:''}
+    <span class="team-name">${escapeHTML(name)}</span>
+   </div>
+   ${match.status !== 'upcoming'?`<span class="score">${score}</span>`:''}
+  </div>`;
+ }
+
+ return `<article class="card ${pinned?'pinned':''}" data-match-id="${escapeHTML(match.id)}">
+  <div class="between"><span class="pill">${escapeHTML(match.leagueShort)}</span>${time}</div>
+  ${teamRow(match.home,match.homeId,match.homeLogo,match.scoreHome,homeFav)}
+  ${teamRow(match.away,match.awayId,match.awayLogo,match.scoreAway,awayFav)}
+  ${match.status==='live'?'<div class="small green" style="text-align:center">LIVE</div>':''}
+  ${match.lastScorer?`<div class="small yellow" style="text-align:center;margin-top:8px">⚽ ${escapeHTML(match.lastScorer)} ${escapeHTML(match.goalMinute)}</div>`:''}
+ </article>`;
+}
+
+function renderMatches() {
+ const live = filteredMatches.filter(m => m.status==='live');
+ const upcoming = filteredMatches.filter(m => m.status==='upcoming');
+ const finished = filteredMatches.filter(m => m.status==='finished');
+ const pinned = filteredMatches.filter(m =>
+  favTeams.includes(m.homeId) || favTeams.includes(m.awayId)
+ );
+
+ document.getElementById('pinned-matches').innerHTML = pinned.length
+  ? '<h2>⭐ Your Teams</h2><div class="grid">'+pinned.map(createMatchCard).join('')+'</div>'
+  : '';
+
+ document.getElementById('live-matches').innerHTML = live
+  .filter(m => !favTeams.includes(m.homeId) && !favTeams.includes(m.awayId))
+  .map(createMatchCard).join('');
+
+ document.getElementById('today-matches').innerHTML = upcoming
+  .filter(m => !favTeams.includes(m.homeId) && !favTeams.includes(m.awayId))
+  .map(createMatchCard).join('');
+
+ document.getElementById('finished-heading').classList.toggle('hidden',finished.length===0);
+ document.getElementById('finished-matches').innerHTML = finished
+  .filter(m => !favTeams.includes(m.homeId) && !favTeams.includes(m.awayId))
+  .map(createMatchCard).join('');
+
+ document.getElementById('no-matches').classList.toggle('hidden',filteredMatches.length>0);
+ renderFavTeams();
+}
+
+function toggleFavTeam(id,name) {
+ id = String(id);
+ const index = favTeams.indexOf(id);
+
+ if (index >= 0) {
+  favTeams.splice(index,1);
+  showToast('Unfollowed '+name);
+ } else {
+  favTeams.push(id);
+  showToast('Following '+name);
+ }
+
+ save(KEY.teams,favTeams);
+ applyFilter();
+ renderMatches();
+}
+
+function renderFavTeams() {
+ const list = document.getElementById('fav-teams-list');
+ document.getElementById('team-count').textContent = `(${favTeams.length})`;
+
+ if (!favTeams.length) {
+  list.innerHTML='<p class="small">Star a team in the match list to follow it.</p>';
+  return;
+ }
+
+ const names = {};
+ allMatches.forEach(match => {
+  names[match.homeId] = match.home;
+  names[match.awayId] = match.away;
+ });
+
+ list.innerHTML = favTeams.map(id => `
+  <div class="between" style="padding:10px 0;border-bottom:1px solid #ffffff15">
+   <span>${escapeHTML(names[id] || 'Team '+id)}</span>
+   <button class="red" onclick="toggleFavTeam('${escapeJS(id)}','${escapeJS(names[id] || 'team')}')">Remove</button>
+  </div>`).join('');
+}
+
+function flashMatchCard(id) {
+ setTimeout(() => {
+  const card = [...document.querySelectorAll('[data-match-id]')]
+   .find(element => element.dataset.matchId === String(id));
+  if (!card) return;
+  card.classList.add('flash');
+  setTimeout(() => card.classList.remove('flash'),850);
+ },50);
+}
+
+function switchTab(tab) {
+ document.getElementById('tab-home').classList.toggle('hidden',tab!=='home');
+ document.getElementById('tab-settings').classList.toggle('hidden',tab!=='settings');
+ document.querySelectorAll('.nav-btn').forEach(button => {
+  button.classList.toggle('active',button.dataset.tab===tab);
+ });
+}
+
+function toggleSettings() {
+ switchTab('settings');
+}
+
+function refreshScores() {
+ showToast('Refreshing scores...');
+ fetchMatches();
+}
+
+function updateLiveCount() {
+ document.getElementById('live-count').textContent =
+  allMatches.filter(m => m.status==='live').length+' LIVE';
+}
+
+function updateLastUpdate() {
+ const time = new Date().toLocaleTimeString('en-GB',{
+  timeZone:'Africa/Harare',hour:'2-digit',minute:'2-digit'
+ });
+ document.getElementById('last-update').textContent='Updated '+time+' CAT';
+}
+
+document.addEventListener('visibilitychange',() => {
+ if (!document.hidden) fetchMatches();
+});
+
+window.addEventListener('online',() => fetchMatches());
+window.addEventListener('pagehide',() => clearInterval(updateInterval));
+</script>
+</body>
+</html>
